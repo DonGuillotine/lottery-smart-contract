@@ -13,6 +13,13 @@ contract BasicLottery is Ownable, ReentrancyGuard {
     event ParticipantEntered(address participant, uint256 amount);
     event WinnerPicked(address winner, uint256 amount);
 
+    error InsufficientEntryFee();
+    error LotteryIsFull();
+    error LotteryHasEnded();
+    error NoParticipants();
+    error LotteryNotYetEnded();
+    error FailedToSendEther();
+
     constructor(uint256 _minEntryFee, uint256 _maxParticipants, uint256 _lotteryDuration) Ownable(msg.sender) {
         minEntryFee = _minEntryFee;
         maxParticipants = _maxParticipants;
@@ -20,24 +27,24 @@ contract BasicLottery is Ownable, ReentrancyGuard {
     }
 
     function enter() external payable {
-        require(msg.value >= minEntryFee, "Insufficient entry fee");
-        require(participants.length < maxParticipants, "Lottery is full");
-        require(block.timestamp < lotteryEndTime, "Lottery has ended");
+        if (msg.value < minEntryFee) revert InsufficientEntryFee();
+        if (participants.length >= maxParticipants) revert LotteryIsFull();
+        if (block.timestamp >= lotteryEndTime) revert LotteryHasEnded();
 
         participants.push(payable(msg.sender));
         emit ParticipantEntered(msg.sender, msg.value);
     }
 
     function pickWinner() external onlyOwner nonReentrant {
-        require(participants.length > 0, "No participants");
-        require(block.timestamp >= lotteryEndTime, "Lottery not yet ended");
+        if (participants.length == 0) revert NoParticipants();
+        if (block.timestamp < lotteryEndTime) revert LotteryNotYetEnded();
 
         uint256 index = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, participants.length))) % participants.length;
         address payable winner = participants[index];
         uint256 prize = address(this).balance;
 
         (bool success, ) = winner.call{value: prize}("");
-        require(success, "Failed to send Ether");
+        if (!success) revert FailedToSendEther();
 
         emit WinnerPicked(winner, prize);
 
